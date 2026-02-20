@@ -289,79 +289,131 @@ def generate_pdf_buffer(results):
     
     verdict = "MANIPULATED / DEEPFAKE" if final > 0.6 else ("SUSPICIOUS ACTIVITY" if final > 0.35 else "AUTHENTIC MEDIA")
     v_color = colors.HexColor("#ef4444") if final > 0.6 else (colors.HexColor("#eab308") if final > 0.35 else colors.HexColor("#10b981"))
-
-    # Header
-    c.setFillColor(colors.HexColor("#0b0f19"))
-    c.rect(0, h-90, w, 90, fill=1, stroke=0)
+    bg_color = colors.HexColor("#f8fafc")
+    text_primary = colors.HexColor("#0f172a")
+    text_secondary = colors.HexColor("#64748b")
+    
+    # 1. Header (Dark minimalist banner)
+    c.setFillColor(colors.HexColor("#0f172a"))
+    c.rect(0, h-100, w, 100, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 24)
-    c.drawString(40, h-50, "SENTINEL PRO // FORENSIC REPORT")
+    c.setFont("Helvetica-Bold", 28)
+    c.drawString(40, h-55, "SENTINEL PRO")
+    c.setFont("Helvetica", 14)
+    c.setFillColor(colors.HexColor("#94a3b8"))
+    c.drawString(40, h-75, "Advanced Forensic Analysis Report")
+    
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(colors.white)
+    c.drawRightString(w-40, h-45, f"CASE ID: SEN-{case_id}")
     c.setFont("Helvetica", 10)
     c.setFillColor(colors.HexColor("#94a3b8"))
-    c.drawString(w-200, h-40, f"CASE ID: SEN-{case_id}")
-    c.drawString(w-200, h-55, f"CLASSIFICATION: RESTRICTED")
-    c.drawString(w-200, h-70, f"TIMESTAMP: {results['timestamp']}")
+    c.drawRightString(w-40, h-60, f"DATE: {results['timestamp'].split(' ')[0]}")
+    c.drawRightString(w-40, h-75, f"TIME: {results['timestamp'].split(' ')[1]}")
     
-    # Verdict Box
+    # 2. Executive Summary / Verdict Box
     y = h - 160
     c.setStrokeColor(v_color)
-    c.setLineWidth(2)
-    c.setFillColor(colors.HexColor("#f8fafc"))
-    c.roundRect(40, y-50, w-80, 60, 8, fill=1, stroke=1)
+    c.setLineWidth(1.5)
+    c.setFillColor(colors.HexColor("#ffffff"))
+    c.roundRect(40, y-40, w-80, 70, 6, fill=1, stroke=1)
+    
+    # Verdict Label
+    c.setFillColor(text_secondary)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(60, y+10, "SYSTEM DIAGNOSIS")
+    
+    # Verdict Value
     c.setFillColor(v_color)
-    c.setFont("Helvetica-Bold", 26)
-    c.drawCentredString(w/2, y-25, f"CONCLUSION: {verdict}")
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(60, y-20, verdict)
     
-    # Metadata
-    y -= 90
-    c.setFont("Helvetica-Bold", 12)
-    c.setFillColor(colors.black)
-    c.drawString(40, y, "EVIDENCE INTEGRITY METADATA")
-    c.setStrokeColor(colors.HexColor("#cbd5e1"))
-    c.setLineWidth(1)
-    c.line(40, y-8, w-40, y-8)
-    y -= 30
+    # Confidence Score Right Aligned in Box
+    c.setFillColor(text_primary)
+    c.setFont("Helvetica-Bold", 32)
+    c.drawRightString(w-60, y-20, f"{final*100:.1f}%")
+    c.setFillColor(text_secondary)
     c.setFont("Helvetica", 10)
-    c.drawString(40, y, f"Source Filename: {results['filename']}")
-    c.drawString(300, y, f"Total Frames Analyzed: {results.get('seq_length', config.SEQ_LENGTH)}")
+    c.drawRightString(w-60, y+8, "CONFIDENCE SCORE")
+
+    # 3. Evidence Metadata (2 Column clean layout)
+    y -= 100
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(text_primary)
+    c.drawString(40, y, "EVIDENCE INTEGRITY METADATA")
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.setLineWidth(1)
+    c.line(40, y-10, w-40, y-10)
     
-    # Visual Evidence
-    y -= 50
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, "VISUAL PARSING & DETECTION")
-    c.line(40, y-8, w-40, y-8)
-    y -= 20
+    y -= 35
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(text_secondary)
+    c.drawString(40, y, "FILENAME")
+    c.drawString(w/2, y, "FRAMES ANALYZED")
     
+    y -= 15
+    c.setFont("Helvetica", 11)
+    c.setFillColor(text_primary)
+    c.drawString(40, y, f"{results['filename']}")
+    c.drawString(w/2, y, f"{results.get('seq_length', config.SEQ_LENGTH)} Frames (Temporal Sequence)")
+    
+    # 4. Visual Evidence & Biometrics
+    y -= 60
+    c.setFont("Helvetica-Bold", 14)
+    c.setString(40, y, "BIOMETRIC & FREQUENCY BREAKDOWN")
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.line(40, y-10, w-40, y-10)
+    
+    y -= 30
+    # Left side: Image
     if os.path.exists("temp_thumb.jpg"):
-        c.drawImage("temp_thumb.jpg", 40, y - 200, width=200, height=200, preserveAspectRatio=True)
+        c.setStrokeColor(colors.HexColor("#cbd5e1"))
+        c.setLineWidth(0.5)
+        c.rect(40, y-180, 180, 180, fill=0, stroke=1) # Image frame
+        c.drawImage("temp_thumb.jpg", 40, y - 180, width=180, height=180, preserveAspectRatio=True)
     
-    # Metrics
-    tx = 270
-    ty = y - 40
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(tx, ty, "Biometric & Frequency Breakdown:")
-    ty -= 25
+    # Right side: Metrics
+    tx = 250
+    ty = y - 20
     
     scores = [
-        ("Spatial Artifacts (Xception Net)", results['s']),
-        ("High-Freq Noise (SRM Filter)", results['f']),
-        ("Temporal Flow (BiLSTM)", results['t']),
-        ("Overall Confidence Score", results['final'])
+        ("Spatial Artifacts Analysis (Xception Net)", results['s']),
+        ("Frequency Domain Anomalies (SRM Filter)", results['f']),
+        ("Temporal Flow Inconsistency (BiLSTM)", results['t'])
     ]
-    for idx, (name, score) in enumerate(scores):
+    
+    for name, score in scores:
         sc = colors.HexColor("#ef4444") if score > 0.6 else (colors.HexColor("#eab308") if score > 0.35 else colors.HexColor("#10b981"))
-        if idx == 3: ty -= 15 # Gap for final score
         
-        c.setFont("Helvetica-Bold" if idx == 3 else "Helvetica", 10)
-        c.setFillColor(colors.HexColor("#334155"))
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColor(text_primary)
         c.drawString(tx, ty, name)
-        c.setFillColor(colors.HexColor("#e2e8f0"))
-        c.rect(tx+180, ty-1, 100, 10, fill=1, stroke=0)
+        
+        c.setFont("Helvetica-Bold", 11)
         c.setFillColor(sc)
-        c.rect(tx+180, ty-1, 100*score, 10, fill=1, stroke=0)
-        c.setFillColor(colors.black)
-        c.drawString(tx+290, ty, f"{score*100:.1f}%")
-        ty -= 30
+        c.drawRightString(w-40, ty, f"{score*100:.1f}%")
+        
+        # Progress Bar base
+        ty -= 15
+        bar_w = w - tx - 40
+        c.setFillColor(colors.HexColor("#f1f5f9"))
+        c.roundRect(tx, ty, bar_w, 8, 4, fill=1, stroke=0)
+        
+        # Progress Bar fill
+        c.setFillColor(sc)
+        c.roundRect(tx, ty, bar_w * score, 8, 4, fill=1, stroke=0)
+        
+        ty -= 35
+
+    # 5. Footer
+    c.setFillColor(colors.HexColor("#f8fafc"))
+    c.rect(0, 0, w, 50, fill=1, stroke=0)
+    c.setStrokeColor(colors.HexColor("#e2e8f0"))
+    c.line(0, 50, w, 50)
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(text_secondary)
+    c.drawString(40, 20, "CLASSIFICATION: CONFIDENTIAL / INTERNAL USE ONLY")
+    c.drawRightString(w-40, 20, f"Generated by Sentinel Pro Core // Page 1 of 1")
 
     c.save()
     buffer.seek(0)
