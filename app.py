@@ -360,7 +360,7 @@ def generate_pdf_buffer(results):
     # 4. Visual Evidence & Biometrics
     y -= 60
     c.setFont("Helvetica-Bold", 14)
-    c.setString(40, y, "BIOMETRIC & FREQUENCY BREAKDOWN")
+    c.drawString(40, y, "BIOMETRIC & FREQUENCY BREAKDOWN")
     c.setStrokeColor(colors.HexColor("#e2e8f0"))
     c.line(40, y-10, w-40, y-10)
     
