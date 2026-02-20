@@ -82,7 +82,8 @@ st.markdown("""
     .log-info { color: #6366f1; }
     .log-time { color: #64748b; font-size: 11px; margin-right: 8px; }
     
-    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; }
+    div[data-testid="stVideo"] { margin-bottom: 0px !important; }
+    div[data-testid="stVideo"] video { max-height: 400px; object-fit: contain; }
     
     /* Customize progress bar colors */
     .stProgress .st-bo { background-color: #3b82f6; }
