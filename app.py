@@ -393,12 +393,15 @@ if nav == "Dashboard":
         uploaded_file = st.file_uploader("Drop target file for analysis", type=["mp4", "mov", "avi"], label_visibility="collapsed")
         
         if uploaded_file is not None:
-            if st.session_state.video_path is None or not os.path.exists(st.session_state.video_path):
+            file_identifier = f"{uploaded_file.name}_{uploaded_file.size}"
+            if 'current_file_id' not in st.session_state or st.session_state.current_file_id != file_identifier or st.session_state.video_path is None or not os.path.exists(st.session_state.video_path):
+                uploaded_file.seek(0)
                 tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
                 tfile.write(uploaded_file.read())
                 tfile.close()
                 st.session_state.video_path = tfile.name
                 st.session_state.results = None
+                st.session_state.current_file_id = file_identifier
             
             st.video(st.session_state.video_path)
             
