@@ -162,14 +162,14 @@ models, DEVICE = load_models()
 # ==========================================
 #        INFERENCE ENGINE
 # ==========================================
-def extract_frames(video_path):
+def extract_frames(video_path, seq_length):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         add_log("Unable to open video stream", "error")
         return []
     
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    indices = np.linspace(0, total-1, config.SEQ_LENGTH, dtype=int) if total > config.SEQ_LENGTH else range(total)
+    indices = np.linspace(0, total-1, seq_length, dtype=int) if total > seq_length else range(total)
     
     frames = []
     idx = 0
@@ -181,12 +181,12 @@ def extract_frames(video_path):
         idx += 1
     cap.release()
 
-    while len(frames) < config.SEQ_LENGTH and len(frames) > 0: 
+    while len(frames) < seq_length and len(frames) > 0: 
         frames.append(frames[-1].copy())
         
     return frames
 
-def run_analysis(video_path):
+def run_analysis(video_path, seq_length):
     add_log(">>> INITIATING DEEP FORENSIC SCAN...", "info")
     
     trans_spatial = transforms.Compose([
@@ -199,7 +199,7 @@ def run_analysis(video_path):
         transforms.ToTensor()
     ])
 
-    frames = extract_frames(video_path)
+    frames = extract_frames(video_path, seq_length)
     if not frames: return
 
     batch_s, batch_f = [], []
@@ -213,7 +213,7 @@ def run_analysis(video_path):
     
     # 1. Face Extraction & Preprocessing
     for i, f in enumerate(frames):
-        status_text.text(f"Isolating Subject [Frame {i+1}/{config.SEQ_LENGTH}]")
+        status_text.text(f"Isolating Subject [Frame {i+1}/{seq_length}]")
         boxes, _ = models['mtcnn'].detect(f)
         
         if boxes is not None: 
@@ -231,7 +231,7 @@ def run_analysis(video_path):
              
         batch_s.append(trans_spatial(face_final))
         batch_f.append(trans_srm(face_final))
-        progress_bar.progress((i + 1) / config.SEQ_LENGTH)
+        progress_bar.progress((i + 1) / seq_length)
 
     if not thumb_saved and frames:
         frames[0].save("temp_thumb.jpg")
@@ -272,7 +272,8 @@ def run_analysis(video_path):
         "final": final, "s": val_s, "f": val_f, "t": val_t,
         "filename": os.path.basename(video_path),
         "frame_scores": frame_scores,
-        "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "seq_length": seq_length
     }
     st.session_state.history.insert(0, st.session_state.results)
 
@@ -322,7 +323,7 @@ def generate_pdf_buffer(results):
     y -= 30
     c.setFont("Helvetica", 10)
     c.drawString(40, y, f"Source Filename: {results['filename']}")
-    c.drawString(300, y, f"Total Frames Analyzed: {config.SEQ_LENGTH}")
+    c.drawString(300, y, f"Total Frames Analyzed: {results.get('seq_length', config.SEQ_LENGTH)}")
     
     # Visual Evidence
     y -= 50
@@ -401,12 +402,16 @@ if nav == "Dashboard":
             
             st.video(st.session_state.video_path)
             
+            st.markdown("<div style='margin: 15px 0;'>", unsafe_allow_html=True)
+            seq_length_slider = st.slider("Frames to Analyze (Temporal Resolution)", min_value=10, max_value=18, value=config.SEQ_LENGTH, step=1)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
             action_col1, action_col2 = st.columns([3, 1])
             with action_col1:
                 if st.button("INITIATE DIAGNOSTICS SEQUENCE", use_container_width=True, type="primary"):
                     st.session_state.results = None
                     st.session_state.logs = []
-                    run_analysis(st.session_state.video_path)
+                    run_analysis(st.session_state.video_path, seq_length_slider)
                     st.rerun()
         
         st.markdown("</div>", unsafe_allow_html=True)
