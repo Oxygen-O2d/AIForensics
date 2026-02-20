@@ -287,8 +287,19 @@ def generate_pdf_buffer(results):
     case_id = str(int(time.time()))
     final = results['final']
     
-    verdict = "MANIPULATED / DEEPFAKE" if final > 0.6 else ("SUSPICIOUS ACTIVITY" if final > 0.35 else "AUTHENTIC MEDIA")
-    v_color = colors.HexColor("#ef4444") if final > 0.6 else (colors.HexColor("#eab308") if final > 0.35 else colors.HexColor("#10b981"))
+    if final > 0.6:
+        verdict = "MANIPULATED / DEEPFAKE"
+        v_color = colors.HexColor("#ef4444")
+        display_score = final * 100
+    elif final > 0.35:
+        verdict = "SUSPICIOUS ACTIVITY"
+        v_color = colors.HexColor("#eab308")
+        display_score = final * 100
+    else:
+        verdict = "AUTHENTIC MEDIA"
+        v_color = colors.HexColor("#10b981")
+        display_score = (1 - final) * 100
+        
     bg_color = colors.HexColor("#f8fafc")
     text_primary = colors.HexColor("#0f172a")
     text_secondary = colors.HexColor("#64748b")
@@ -331,7 +342,7 @@ def generate_pdf_buffer(results):
     # Confidence Score Right Aligned in Box
     c.setFillColor(text_primary)
     c.setFont("Helvetica-Bold", 32)
-    c.drawRightString(w-60, y-20, f"{final*100:.1f}%")
+    c.drawRightString(w-60, y-20, f"{display_score:.1f}%")
     c.setFillColor(text_secondary)
     c.setFont("Helvetica", 10)
     c.drawRightString(w-60, y+8, "CONFIDENCE SCORE")
@@ -405,7 +416,57 @@ def generate_pdf_buffer(results):
         
         ty -= 35
 
-    # 5. Footer
+    # 5. Per-Frame Analysis
+    y = ty - 20
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(colors.white)
+    
+    # Title Banner for Per Frame Analysis
+    c.rect(40, y-15, w-80, 25, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.drawString(50, y-8, "PER-FRAME ANALYSIS")
+    
+    y -= 40
+    c.setFont("Helvetica", 10)
+    c.setFillColor(text_secondary)
+    c.drawString(40, y, "Individual frame manipulation scores (green = authentic, yellow = uncertain, red = manipulated):")
+    
+    y -= 30
+    frame_scores = results.get('frame_scores', [])
+    num_frames = len(frame_scores)
+    
+    if num_frames > 0:
+        box_width = (w - 80 - (num_frames - 1) * 5) / num_frames
+        box_height = 25
+        
+        for i, score in enumerate(frame_scores):
+            # Coordinates
+            bx = 40 + i * (box_width + 5)
+            by = y
+            
+            # Color
+            if score > 0.6:
+                box_color = colors.HexColor("#ef4444")
+            elif score > 0.35:
+                box_color = colors.HexColor("#eab308")
+            else:
+                box_color = colors.HexColor("#22c55e")
+                
+            # Draw Box
+            c.setFillColor(box_color)
+            c.rect(bx, by, box_width, box_height, fill=1, stroke=0)
+            
+            # Draw Score inside Box
+            c.setFillColor(colors.white)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawCentredString(bx + box_width/2, by + 8, f"{score*100:.0f}%")
+            
+            # Draw Frame Number Text Below
+            c.setFillColor(colors.HexColor("#94a3b8"))
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(bx + box_width/2, by - 15, f"F{i+1}")
+
+    # 6. Footer
     c.setFillColor(colors.HexColor("#f8fafc"))
     c.rect(0, 0, w, 50, fill=1, stroke=0)
     c.setStrokeColor(colors.HexColor("#e2e8f0"))
