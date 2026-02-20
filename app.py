@@ -4,10 +4,12 @@ import cv2
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 import datetime
 import time
 import tempfile
 import io
+import plotly.express as px
 from PIL import Image, ImageDraw
 from torchvision import transforms
 from facenet_pytorch import MTCNN
@@ -15,7 +17,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-# Import your existing configurations and models
 import config
 from models import SpatialXception, SRMXception, DeepfakeLSTM
 
@@ -24,20 +25,67 @@ from models import SpatialXception, SRMXception, DeepfakeLSTM
 # ==========================================
 st.set_page_config(page_title="Sentinel Pro // Forensic Engine", page_icon="🛡️", layout="wide")
 
-# Inject Custom CSS to mimic the PyQt5 Dark Theme
 st.markdown("""
     <style>
-    .stApp { background-color: #0f0f12; color: #e4e4e7; }
-    .css-1d391kg { background-color: #18181b; } /* Sidebar */
-    h1, h2, h3 { color: #ffffff; letter-spacing: 1px; }
-    .card { background-color: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; margin-bottom: 20px;}
-    .metric-value { font-size: 48px; font-weight: 900; }
-    .section-title { color: #a1a1aa; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-    .log-box { background-color: #09090b; border: 1px solid #27272a; border-radius: 8px; padding: 10px; font-family: monospace; font-size: 12px; height: 150px; overflow-y: auto; color: #e4e4e7;}
-    .log-success { color: #22c55e; }
-    .log-error { color: #ef4444; }
+    /* Premium Glassmorphism UI */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap');
+    
+    .stApp { background-color: #0b0f19; color: #f8fafc; font-family: 'Inter', sans-serif; }
+    
+    .css-1d391kg { background-color: #111827 !important; border-right: 1px solid rgba(255,255,255,0.05); }
+    
+    h1, h2, h3 { color: #ffffff; font-weight: 800; letter-spacing: -0.5px; }
+    
+    .card { 
+        background: rgba(30, 41, 59, 0.4); 
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.05); 
+        border-radius: 16px; 
+        padding: 24px; 
+        margin-bottom: 24px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .card:hover { border-color: rgba(255,255,255,0.1); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2); }
+    
+    .metric-value { 
+        font-size: 64px; 
+        font-weight: 900; 
+        line-height: 1; 
+        margin-bottom: 8px;
+        text-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .verdict-badge {
+        font-size: 16px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
+        padding: 12px 24px; border-radius: 12px; display: inline-block; width: 100%; text-align: center;
+        box-shadow: inset 0 2px 4px rgba(255,255,255,0.1);
+    }
+    
+    .section-title { 
+        color: #94a3b8; font-size: 11px; font-weight: 700; text-transform: uppercase; 
+        letter-spacing: 2px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); 
+        padding-bottom: 8px;
+    }
+    
+    .log-box { 
+        background-color: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.05); 
+        border-radius: 12px; padding: 16px; font-family: 'JetBrains Mono', monospace; 
+        font-size: 13px; height: 220px; overflow-y: auto; color: #cbd5e1;
+        box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.2);
+    }
+    
+    .log-success { color: #10b981; font-weight: 600; text-shadow: 0 0 10px rgba(16,185,129,0.3); }
+    .log-error { color: #ef4444; font-weight: 600; text-shadow: 0 0 10px rgba(239,68,68,0.3); }
     .log-info { color: #6366f1; }
-    div[data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
+    .log-time { color: #64748b; font-size: 11px; margin-right: 8px; }
+    
+    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: 800; }
+    
+    /* Customize progress bar colors */
+    .stProgress .st-bo { background-color: #3b82f6; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -58,12 +106,12 @@ def add_log(msg, level="info"):
     color_class = "log-info"
     if level == "success": color_class = "log-success"
     if level == "error": color_class = "log-error"
-    st.session_state.logs.append(f"<span style='color:#71717a;'>[{t}]</span> <span class='{color_class}'>{msg}</span>")
+    st.session_state.logs.append(f"<span class='log-time'>[{t}]</span> <span class='{color_class}'>{msg}</span>")
 
 # ==========================================
 #        MODEL LOADING (CACHED)
 # ==========================================
-@st.cache_resource(show_spinner="Booting Neural Networks...")
+@st.cache_resource(show_spinner="Initializing Tensor Cores & Loading Models...")
 def load_models():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     models = {}
@@ -103,10 +151,10 @@ def load_models():
         models['lstm'] = m3.eval()
         
         # MTCNN
-        models['mtcnn'] = MTCNN(keep_all=False, select_largest=True, device=device, margin=0)
+        models['mtcnn'] = MTCNN(keep_all=False, select_largest=True, device=device, margin=14)
         return models, device
     except Exception as e:
-        st.error(f"Failed to load models: {e}")
+        st.error(f"FATAL ERROR: Model architecture load failed -> {e}")
         return None, device
 
 models, DEVICE = load_models()
@@ -114,20 +162,12 @@ models, DEVICE = load_models()
 # ==========================================
 #        INFERENCE ENGINE
 # ==========================================
-def run_analysis(video_path):
-    add_log(">>> INITIATING FORENSIC SCAN...", "info")
-    
-    trans = transforms.Compose([
-        transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)), 
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    trans_srm = transforms.Compose([
-        transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)), 
-        transforms.ToTensor()
-    ])
-
+def extract_frames(video_path):
     cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        add_log("Unable to open video stream", "error")
+        return []
+    
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     indices = np.linspace(0, total-1, config.SEQ_LENGTH, dtype=int) if total > config.SEQ_LENGTH else range(total)
     
@@ -141,70 +181,92 @@ def run_analysis(video_path):
         idx += 1
     cap.release()
 
-    while len(frames) < config.SEQ_LENGTH: 
-        frames.append(frames[-1] if frames else Image.new('RGB', (config.IMG_SIZE, config.IMG_SIZE)))
+    while len(frames) < config.SEQ_LENGTH and len(frames) > 0: 
+        frames.append(frames[-1].copy())
+        
+    return frames
+
+def run_analysis(video_path):
+    add_log(">>> INITIATING DEEP FORENSIC SCAN...", "info")
+    
+    trans_spatial = transforms.Compose([
+        transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)), 
+        transforms.ToTensor(), 
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    trans_srm = transforms.Compose([
+        transforms.Resize((config.IMG_SIZE, config.IMG_SIZE)), 
+        transforms.ToTensor()
+    ])
+
+    frames = extract_frames(video_path)
+    if not frames: return
 
     batch_s, batch_f = [], []
-    frame_scores = []
+    valid_indices = []
     
-    add_log(">>> ANALYZING VISUAL EVIDENCE...", "info")
+    add_log(">>> EXTRACTING FACIAL BIOMETRICS...", "info")
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     thumb_saved = False
     
+    # 1. Face Extraction & Preprocessing
     for i, f in enumerate(frames):
-        status_text.text(f"Scanning Frame [{i+1}/{config.SEQ_LENGTH}]")
+        status_text.text(f"Isolating Subject [Frame {i+1}/{config.SEQ_LENGTH}]")
         boxes, _ = models['mtcnn'].detect(f)
         
         if boxes is not None: 
             face = f.crop(boxes[0])
-            draw = ImageDraw.Draw(f)
-            
-            face_t = face.resize((config.IMG_SIZE, config.IMG_SIZE), Image.BILINEAR)
-            inp_s = trans(face_t).unsqueeze(0).to(DEVICE)
-            inp_f = trans_srm(face_t).unsqueeze(0).to(DEVICE)
-            
-            with torch.no_grad():
-                _, l_s = models['spatial'](inp_s)
-                _, l_f = models['srm'](inp_f)
-                prob_s = torch.softmax(l_s, dim=1)[:, 1].item()
-                prob_f = torch.sigmoid(l_f).item()
-                score_frame = (prob_s + prob_f) / 2
-            
-            color = "#ef4444" if score_frame > 0.5 else "#22c55e"
-            draw.rectangle(boxes[0].tolist(), outline=color, width=5)
+            face_final = face.resize((config.IMG_SIZE, config.IMG_SIZE), Image.BILINEAR)
+            valid_indices.append(i)
         else: 
-            face = f.resize((config.IMG_SIZE, config.IMG_SIZE))
-            score_frame = 0.5
+            face_final = f.resize((config.IMG_SIZE, config.IMG_SIZE), Image.BILINEAR)
         
-        # Save first processed frame as thumbnail for PDF
-        if not thumb_saved:
-            f.save("temp_thumb.jpg")
-            thumb_saved = True
-            
-        frame_scores.append(score_frame)
-        face_final = face.resize((config.IMG_SIZE, config.IMG_SIZE), Image.BILINEAR)
-        batch_s.append(trans(face_final))
+        if not thumb_saved and boxes is not None:
+             draw = ImageDraw.Draw(f)
+             draw.rectangle(boxes[0].tolist(), outline="#3b82f6", width=6)
+             f.save("temp_thumb.jpg")
+             thumb_saved = True
+             
+        batch_s.append(trans_spatial(face_final))
         batch_f.append(trans_srm(face_final))
-        
         progress_bar.progress((i + 1) / config.SEQ_LENGTH)
 
-    add_log(">>> COMPUTING TEMPORAL CONSISTENCY...", "info")
+    if not thumb_saved and frames:
+        frames[0].save("temp_thumb.jpg")
+
+    status_text.text("Constructing Tensor Batch...")
     inp_s = torch.stack(batch_s).to(DEVICE)
     inp_f = torch.stack(batch_f).to(DEVICE)
 
+    add_log(">>> EXECUTING NEURAL INFERENCE (BATCHED)...", "info")
+    status_text.text("Running Spatial & Frequency Analysis...")
+    
+    # 2. Batched Inference for spatial models
     with torch.no_grad():
         feat_s, log_s = models['spatial'](inp_s)
-        val_s = torch.softmax(log_s, dim=1)[:, 1].mean().item()
         feat_f, log_f = models['srm'](inp_f)
-        val_f = torch.sigmoid(log_f).mean().item()
         
+        probs_s = torch.softmax(log_s, dim=1)[:, 1].cpu().numpy()
+        probs_f = torch.sigmoid(log_f).cpu().squeeze().numpy()
+        
+        if len(probs_f.shape) == 0:
+            probs_f = np.array([probs_f])
+            
+        val_s = float(np.mean(probs_s))
+        val_f = float(np.mean(probs_f))
+        
+        status_text.text("Evaluating Temporal Coherence via BiLSTM...")
         combined = torch.cat((feat_s, feat_f), dim=1).unsqueeze(0)
         val_t = torch.sigmoid(models['lstm'](combined)).item()
 
+    frame_scores = ((probs_s + probs_f) / 2).tolist()
+
     final = (0.4 * val_s) + (0.4 * val_f) + (0.2 * val_t)
-    add_log(">>> ANALYSIS COMPLETE.", "success")
+    add_log(f">>> ANALYSIS COMPLETE [Confidence: {final*100:.2f}%]", "success")
+    status_text.empty()
+    progress_bar.empty()
     
     st.session_state.results = {
         "final": final, "s": val_s, "f": val_f, "t": val_t,
@@ -223,75 +285,82 @@ def generate_pdf_buffer(results):
     w, h = letter
     case_id = str(int(time.time()))
     final = results['final']
-    verdict = "MANIPULATED" if final > 0.6 else ("SUSPICIOUS" if final > 0.35 else "AUTHENTIC")
-    v_color = colors.HexColor("#ef4444") if final > 0.6 else (colors.HexColor("#eab308") if final > 0.35 else colors.HexColor("#22c55e"))
+    
+    verdict = "MANIPULATED / DEEPFAKE" if final > 0.6 else ("SUSPICIOUS ACTIVITY" if final > 0.35 else "AUTHENTIC MEDIA")
+    v_color = colors.HexColor("#ef4444") if final > 0.6 else (colors.HexColor("#eab308") if final > 0.35 else colors.HexColor("#10b981"))
 
     # Header
-    c.setFillColor(colors.HexColor("#0f0f12"))
-    c.rect(0, h-80, w, 80, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor("#0b0f19"))
+    c.rect(0, h-90, w, 90, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 22)
-    c.drawString(40, h-50, "SENTINEL PRO — FORENSIC ANALYSIS REPORT")
-    c.setFont("Helvetica", 9)
-    c.setFillColor(colors.HexColor("#a0a0a0"))
-    c.drawString(w-180, h-40, f"Case ID: SEN-{case_id}")
-    c.drawString(w-180, h-55, f"Classification: CONFIDENTIAL")
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(40, h-50, "SENTINEL PRO // FORENSIC REPORT")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(colors.HexColor("#94a3b8"))
+    c.drawString(w-200, h-40, f"CASE ID: SEN-{case_id}")
+    c.drawString(w-200, h-55, f"CLASSIFICATION: RESTRICTED")
+    c.drawString(w-200, h-70, f"TIMESTAMP: {results['timestamp']}")
     
     # Verdict Box
-    y = h - 140
+    y = h - 160
     c.setStrokeColor(v_color)
-    c.setLineWidth(2.5)
-    c.setFillColor(colors.HexColor("#f9f9f9"))
-    c.roundRect(50, y-45, w-100, 55, 8, fill=1, stroke=1)
+    c.setLineWidth(2)
+    c.setFillColor(colors.HexColor("#f8fafc"))
+    c.roundRect(40, y-50, w-80, 60, 8, fill=1, stroke=1)
     c.setFillColor(v_color)
     c.setFont("Helvetica-Bold", 26)
     c.drawCentredString(w/2, y-25, f"CONCLUSION: {verdict}")
     
     # Metadata
-    y -= 80
+    y -= 90
     c.setFont("Helvetica-Bold", 12)
     c.setFillColor(colors.black)
-    c.drawString(50, y, "EVIDENCE INFORMATION")
-    c.line(50, y-5, w-50, y-5)
-    y -= 25
+    c.drawString(40, y, "EVIDENCE INTEGRITY METADATA")
+    c.setStrokeColor(colors.HexColor("#cbd5e1"))
+    c.setLineWidth(1)
+    c.line(40, y-8, w-40, y-8)
+    y -= 30
     c.setFont("Helvetica", 10)
-    c.drawString(50, y, f"Filename: {results['filename']}")
-    c.drawString(300, y, f"Date Analysed: {results['timestamp']}")
+    c.drawString(40, y, f"Source Filename: {results['filename']}")
+    c.drawString(300, y, f"Total Frames Analyzed: {config.SEQ_LENGTH}")
     
     # Visual Evidence
-    y -= 40
+    y -= 50
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "VISUAL EVIDENCE & BREAKDOWN")
-    c.line(50, y-5, w-50, y-5)
-    y -= 15
+    c.drawString(40, y, "VISUAL PARSING & DETECTION")
+    c.line(40, y-8, w-40, y-8)
+    y -= 20
     
     if os.path.exists("temp_thumb.jpg"):
-        c.drawImage("temp_thumb.jpg", 50, y - 180, width=180, height=180, preserveAspectRatio=True)
+        c.drawImage("temp_thumb.jpg", 40, y - 200, width=200, height=200, preserveAspectRatio=True)
     
     # Metrics
-    tx = 260
-    ty = y - 30
+    tx = 270
+    ty = y - 40
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(tx, ty, "Technical Biometric Breakdown:")
-    ty -= 20
+    c.drawString(tx, ty, "Biometric & Frequency Breakdown:")
+    ty -= 25
     
     scores = [
-        ("Spatial Artifacts (Xception)", results['s']),
-        ("Frequency Noise (SRM Filter)", results['f']),
-        ("Temporal Consistency (BiLSTM)", results['t']),
+        ("Spatial Artifacts (Xception Net)", results['s']),
+        ("High-Freq Noise (SRM Filter)", results['f']),
+        ("Temporal Flow (BiLSTM)", results['t']),
+        ("Overall Confidence Score", results['final'])
     ]
-    for name, score in scores:
-        sc = colors.HexColor("#ef4444") if score > 0.6 else colors.HexColor("#22c55e")
-        c.setFont("Helvetica", 10)
-        c.setFillColor(colors.HexColor("#555555"))
+    for idx, (name, score) in enumerate(scores):
+        sc = colors.HexColor("#ef4444") if score > 0.6 else (colors.HexColor("#eab308") if score > 0.35 else colors.HexColor("#10b981"))
+        if idx == 3: ty -= 15 # Gap for final score
+        
+        c.setFont("Helvetica-Bold" if idx == 3 else "Helvetica", 10)
+        c.setFillColor(colors.HexColor("#334155"))
         c.drawString(tx, ty, name)
-        c.setFillColor(colors.HexColor("#e0e0e0"))
-        c.rect(tx+170, ty, 100, 10, fill=1, stroke=0)
+        c.setFillColor(colors.HexColor("#e2e8f0"))
+        c.rect(tx+180, ty-1, 100, 10, fill=1, stroke=0)
         c.setFillColor(sc)
-        c.rect(tx+170, ty, 100*score, 10, fill=1, stroke=0)
+        c.rect(tx+180, ty-1, 100*score, 10, fill=1, stroke=0)
         c.setFillColor(colors.black)
-        c.drawString(tx+280, ty, f"{score*100:.1f}%")
-        ty -= 25
+        c.drawString(tx+290, ty, f"{score*100:.1f}%")
+        ty -= 30
 
     c.save()
     buffer.seek(0)
@@ -302,48 +371,77 @@ def generate_pdf_buffer(results):
 # ==========================================
 
 with st.sidebar:
-    st.markdown("<h1 style='color: white;'>SENTINEL</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #71717a; font-weight: bold; margin-top:-15px;'>FORENSIC ENGINE v3.0</p>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("<h1 style='color: white; font-size: 32px;'>SENTINEL</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #3b82f6; font-weight: 800; margin-top:-15px; letter-spacing: 2px;'>PRO // FORENSICS</p>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color: rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
     
-    nav = st.radio("Navigation", ["Dashboard", "Case History", "Settings"], label_visibility="collapsed")
-    st.markdown("---")
+    nav = st.radio("OPERATIONAL MODE", ["Dashboard", "Investigation History", "Settings"], label_visibility="collapsed")
+    st.markdown("<hr style='border-color: rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
     
-    if st.button("🗑️ Clear Kernel Logs"):
+    if st.button("Purge System Logs", use_container_width=True):
         st.session_state.logs = []
         st.rerun()
 
 if nav == "Dashboard":
-    col1, col2 = st.columns([2, 1])
+    col1, col_gap, col2 = st.columns([1.2, 0.05, 1.0])
     
     with col1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload Media (MP4, MOV, AVI)", type=["mp4", "mov", "avi"])
+        st.markdown("<div class='section-title'>MEDIA INGESTION</div>", unsafe_allow_html=True)
+        
+        uploaded_file = st.file_uploader("Drop target file for analysis", type=["mp4", "mov", "avi"], label_visibility="collapsed")
         
         if uploaded_file is not None:
-            # Write to temp file
-            tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
-            tfile.write(uploaded_file.read())
-            st.session_state.video_path = tfile.name
+            if st.session_state.video_path is None or not os.path.exists(st.session_state.video_path):
+                tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
+                tfile.write(uploaded_file.read())
+                tfile.close()
+                st.session_state.video_path = tfile.name
+                st.session_state.results = None
             
             st.video(st.session_state.video_path)
             
-            if st.button("RUN DIAGNOSTICS", use_container_width=True, type="primary"):
-                st.session_state.results = None # Reset previous
-                st.session_state.logs = []
-                run_analysis(st.session_state.video_path)
-                st.rerun()
-                
+            action_col1, action_col2 = st.columns([3, 1])
+            with action_col1:
+                if st.button("INITIATE DIAGNOSTICS SEQUENCE", use_container_width=True, type="primary"):
+                    st.session_state.results = None
+                    st.session_state.logs = []
+                    run_analysis(st.session_state.video_path)
+                    st.rerun()
+        
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # Kernel Logs
-        st.markdown("<div class='section-title'>SYSTEM KERNEL LOG</div>", unsafe_allow_html=True)
-        log_html = "<br>".join(st.session_state.logs)
-        st.markdown(f"<div class='log-box'>{log_html if log_html else 'AWAITING INPUT...'}</div>", unsafe_allow_html=True)
+        if st.session_state.results:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>FRAME-BY-FRAME ANOMALY DETECTION</div>", unsafe_allow_html=True)
+            scores = st.session_state.results['frame_scores']
+            
+            df = pd.DataFrame({
+                "Frame": range(1, len(scores) + 1),
+                "Manipulation Probability": [s * 100 for s in scores]
+            })
+            
+            fig = px.area(df, x="Frame", y="Manipulation Probability", 
+                          color_discrete_sequence=['#ef4444' if np.mean(scores) > 0.5 else '#3b82f6'])
+            fig.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=0, r=0, t=10, b=0),
+                height=250,
+                xaxis_title="Frame Index",
+                yaxis_title="Probability (%)",
+                font=dict(color="#cbd5e1"),
+                yaxis=dict(range=[0, 100], gridcolor="rgba(255,255,255,0.1)"),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.1)"),
+            )
+            fig.add_hline(y=60, line_dash="dash", line_color="#ef4444", annotation_text="Deepfake Threshold", annotation_position="top left")
+            
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>DECISION INTELLIGENCE</div>", unsafe_allow_html=True)
+        st.markdown("<div class='card' style='height: auto;'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>DECISION INTELLIGENCE MODULE</div>", unsafe_allow_html=True)
         
         res = st.session_state.results
         if res:
@@ -353,54 +451,77 @@ if nav == "Dashboard":
             elif final > 0.35:
                 color, verdict, display_score = "#eab308", "SUSPICIOUS", final*100
             else:
-                color, verdict, display_score = "#22c55e", "AUTHENTIC", (1-final)*100
+                color, verdict, display_score = "#10b981", "AUTHENTIC", (1-final)*100
                 
             st.markdown(f"<div class='metric-value' style='color: {color};'>{display_score:.1f}%</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='background-color: {color}20; color: {color}; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 20px;'>{verdict}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='verdict-badge' style='background-color: {color}20; color: {color}; border: 1px solid {color}50;'>{verdict}</div>", unsafe_allow_html=True)
             
-            st.markdown("<div class='section-title'>MANIPULATION PROBABILITY</div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>BIOMETRIC ATTRIBUTES</div>", unsafe_allow_html=True)
             
-            # Metrics
-            st.markdown("Spatial Artifacts")
-            st.progress(res['s'])
-            st.markdown("Frequency Noise")
-            st.progress(res['f'])
-            st.markdown("Temporal Consistency")
-            st.progress(res['t'])
+            def metric_bar(label, value, is_safe):
+                bar_color = "#ef4444" if not is_safe else "#10b981"
+                st.markdown(f"**{label}** - {value*100:.1f}%")
+                st.progress(value)
+                
+            metric_bar("Spatial Anomalies", res['s'], res['s'] < 0.6)
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            metric_bar("Frequency Irregularities", res['f'], res['f'] < 0.6)
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            metric_bar("Temporal Inconsistency", res['t'], res['t'] < 0.6)
             
-            st.markdown("---")
+            st.markdown("<hr style='border-color: rgba(255,255,255,0.1); margin: 25px 0;'>", unsafe_allow_html=True)
+            
             pdf_buffer = generate_pdf_buffer(res)
             st.download_button(
-                label="📥 EXPORT PDF REPORT",
+                label="📥 EXPORT OFFICIAL PDF REPORT",
                 data=pdf_buffer,
-                file_name=f"Report_{res['filename']}.pdf",
+                file_name=f"Forensic_Report_{res['filename']}.pdf",
                 mime="application/pdf",
-                use_container_width=True
+                use_container_width=True,
+                type="secondary"
             )
             
         else:
-            st.markdown("<div class='metric-value' style='color: #3f3f46;'>--%</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='background-color: #27272a; color: #52525b; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 20px;'>AWAITING ANALYSIS</div>", unsafe_allow_html=True)
+            st.markdown("<div class='metric-value' style='color: #334155;'>--.-%</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='verdict-badge' style='background-color: rgba(30,41,59,0.8); color: #64748b; border: 1px solid #334155;'>SYSTEM IDLE</div>", unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>AWAITING DATA</div>", unsafe_allow_html=True)
+            st.markdown("<p style='color: #64748b; font-size: 14px;'>Upload a media file and initiate the diagnostic sequence to view the biometric breakdown.</p>", unsafe_allow_html=True)
         
         st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("<div class='section-title'>SYSTEM KERNEL LOG</div>", unsafe_allow_html=True)
+        log_html = "<br>".join(st.session_state.logs)
+        st.markdown(f"<div class='log-box'>{log_html if log_html else '<span style=\"color:#64748b;\">SYSTEM STANDBY...</span>'}</div>", unsafe_allow_html=True)
 
-elif nav == "Case History":
-    st.markdown("<h3 style='color: white;'>Case History</h3>", unsafe_allow_html=True)
+elif nav == "Investigation History":
+    st.markdown("<h2>Investigation Logs</h2>", unsafe_allow_html=True)
     if not st.session_state.history:
-        st.info("No analysis history found for this session.")
+        st.info("No prior investigations found in the current session kernel.")
     else:
         for idx, item in enumerate(st.session_state.history):
-            with st.expander(f"📄 {item['filename']} | {item['timestamp']} | Score: {item['final']*100:.1f}%"):
-                col_a, col_b, col_c = st.columns(3)
-                col_a.metric("Spatial", f"{item['s']*100:.1f}%")
-                col_b.metric("Frequency", f"{item['f']*100:.1f}%")
-                col_c.metric("Temporal", f"{item['t']*100:.1f}%")
+            color = "🔴" if item['final'] > 0.6 else ("🟡" if item['final'] > 0.35 else "🟢")
+            with st.expander(f"{color} {item['filename']} | {item['timestamp']} | Overall Confidence: {item['final']*100:.1f}%"):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Spatial Probability", f"{item['s']*100:.1f}%")
+                c2.metric("Frequency Probability", f"{item['f']*100:.1f}%")
+                c3.metric("Temporal Anomaly", f"{item['t']*100:.1f}%")
 
 elif nav == "Settings":
-    st.markdown("<h3 style='color: white;'>System Configuration</h3>", unsafe_allow_html=True)
+    st.markdown("<h2>System Configuration Profile</h2>", unsafe_allow_html=True)
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("**Device:** " + ("GPU (CUDA)" if torch.cuda.is_available() else "CPU"))
-    st.markdown(f"**Sequence Length:** {config.SEQ_LENGTH} frames")
-    st.markdown(f"**Image Resolution:** {config.IMG_SIZE}x{config.IMG_SIZE}")
-    st.markdown("**Thresholds:** Authentic (<35%), Suspicious (35-60%), Manipulated (>60%)")
+    
+    config_data = {
+        "Neural Engine Host": "GPU (CUDA Accelerated)" if torch.cuda.is_available() else "CPU (Standard Node)",
+        "Temporal Sequence Length": f"{config.SEQ_LENGTH} frames",
+        "Spatial Matrix Resolution": f"{config.IMG_SIZE}x{config.IMG_SIZE}",
+        "Classification Thresholds": "Authentic (<35%) | Suspicious (35-60%) | Deepfake (>60%)"
+    }
+    
+    for key, val in config_data.items():
+        st.markdown(f"<p><strong style='color:#aeb2b8;'>{key}:</strong> {val}</p>", unsafe_allow_html=True)
+        st.markdown("<hr style='border-color: rgba(255,255,255,0.05); margin: 10px 0;'>", unsafe_allow_html=True)
+        
     st.markdown("</div>", unsafe_allow_html=True)
