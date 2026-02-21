@@ -135,8 +135,8 @@ st.markdown("""
     button[kind="secondary"]:hover { border-color: #4f46e5 !important; color: white !important; }
 
     /* Fix Video Aspect */
-    div[data-testid="stVideo"] { margin-bottom: 0px !important; }
-    div[data-testid="stVideo"] video { max-height: 480px; object-fit: contain; border-radius: 8px;}
+    div[data-testid="stVideo"] { margin-bottom: 0px !important; display: flex; justify-content: center; }
+    div[data-testid="stVideo"] video { max-height: 360px !important; object-fit: contain !important; border-radius: 8px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -575,7 +575,7 @@ with col1:
         """, unsafe_allow_html=True)
     else:
         st.markdown("""
-            <div class='video-container' style='height: 480px; align-items: center; border: 1px dashed #374151;'>
+            <div class='video-container' style='height: 360px; align-items: center; border: 1px dashed #374151;'>
                 <p style='color: #64748b; font-weight: 600;'>DRAG & DROP MEDIA HERE OR CLICK ABOVE</p>
             </div>
         """, unsafe_allow_html=True)
