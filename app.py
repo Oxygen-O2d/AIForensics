@@ -188,36 +188,15 @@ def load_models():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     models = {}
     
-    class GUIWrapper(nn.Module):
-        def __init__(self, model, mode='spatial'):
-            super().__init__()
-            self.model = model
-            self.mode = mode
-        def forward(self, x):
-            if self.mode == 'spatial':
-                x = self.model.forward_features(x)
-                f = self.model.global_pool(x)
-                l = self.model.fc(f)
-                return f, l
-            elif self.mode == 'srm':
-                noise = self.model.compress(self.model.srm(x))
-                x = self.model.backbone.forward_features(noise)
-                f = self.model.backbone.global_pool(x)
-                l = self.model.backbone.fc(f)
-                return f, l
-
     try:
-        m1 = SpatialXception(num_classes=2, pretrained=False).model
-        m1.load_state_dict(torch.load(config.SPATIAL_MODEL_PATH, map_location=device))
-        models['spatial'] = GUIWrapper(m1, 'spatial').eval().to(device)
-
-        m2 = SRMXception(num_classes=1, pretrained=False)
-        m2.load_state_dict(torch.load(config.SRM_MODEL_PATH, map_location=device))
-        models['srm'] = GUIWrapper(m2, 'srm').eval().to(device)
-
-        m3 = DeepfakeLSTM().to(device)
-        m3.load_state_dict(torch.load(config.TEMPORAL_MODEL_PATH, map_location=device))
-        models['lstm'] = m3.eval()
+        models['spatial'] = torch.load(config.SPATIAL_MODEL_PATH, map_location=device)
+        models['spatial'].eval()
+        
+        models['srm'] = torch.load(config.SRM_MODEL_PATH, map_location=device)
+        models['srm'].eval()
+        
+        models['lstm'] = torch.load(config.TEMPORAL_MODEL_PATH, map_location=device)
+        models['lstm'].eval()
         
         models['mtcnn'] = MTCNN(keep_all=False, select_largest=True, device=device, margin=14)
         return models, device
