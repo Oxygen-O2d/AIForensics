@@ -135,8 +135,8 @@ st.markdown("""
     button[kind="secondary"]:hover { border-color: #4f46e5 !important; color: white !important; }
 
     /* Fix Video Aspect */
-    div[data-testid="stVideo"] { margin-bottom: 0px !important; display: flex; justify-content: center; }
-    div[data-testid="stVideo"] video { max-height: 360px !important; object-fit: contain !important; border-radius: 8px;}
+    div[data-testid="stVideo"] { margin-bottom: 0px !important; display: flex; justify-content: center; height: 360px !important; overflow: hidden; }
+    div[data-testid="stVideo"] video { max-height: 360px !important; height: 100% !important; width: auto !important; object-fit: contain !important; border-radius: 8px;}
     </style>
 """, unsafe_allow_html=True)
 
